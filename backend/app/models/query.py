@@ -44,46 +44,6 @@ class OperationSpec(BaseModel):
     limit: int = Field(default=10, ge=1, le=500)
 
 
-class SubQuestion(BaseModel):
-    id: str
-    label: str
-    question: str
-    source_id: Optional[str] = None
-    source_hint: Optional[str] = None
-    requires_join: bool = False
-    chart_intent: bool = False
-    operation: OperationSpec = Field(default_factory=OperationSpec)
-
-
-class SqlSubQuery(BaseModel):
-    id: str
-    label: str
-    question: str
-    source_id: Optional[str] = None
-    source_hint: Optional[str] = None
-    requires_join: bool = False
-    chart_intent: bool = False
-    sql: str
-
-
-class ParsedQuery(BaseModel):
-    original_question: str
-    sub_questions: List[SubQuestion]
-    likely_requires_join: bool = False
-    wants_explanation: bool = False
-    needs_source_confirmation: bool = False
-    candidate_source_ids: List[str] = Field(default_factory=list)
-
-
-class SqlQueryPlan(BaseModel):
-    original_question: str
-    sub_queries: List[SqlSubQuery]
-    likely_requires_join: bool = False
-    wants_explanation: bool = False
-    needs_source_confirmation: bool = False
-    candidate_source_ids: List[str] = Field(default_factory=list)
-
-
 class ChartKind(str, Enum):
     bar = "bar"
     horizontal_bar = "horizontal_bar"
@@ -103,6 +63,48 @@ class ChartSpec(BaseModel):
     x_key: Optional[str] = None
     y_key: Optional[str] = None
     title: Optional[str] = None
+
+
+class SubQuestion(BaseModel):
+    id: str
+    label: str
+    question: str
+    source_id: Optional[str] = None
+    source_hint: Optional[str] = None
+    requires_join: bool = False
+    chart_intent: bool = False
+    chart: ChartSpec = Field(default_factory=ChartSpec)
+    operation: OperationSpec = Field(default_factory=OperationSpec)
+
+
+class SqlSubQuery(BaseModel):
+    id: str
+    label: str
+    question: str
+    source_id: Optional[str] = None
+    source_hint: Optional[str] = None
+    requires_join: bool = False
+    chart_intent: bool = False
+    chart: ChartSpec = Field(default_factory=ChartSpec)
+    sql: str
+
+
+class ParsedQuery(BaseModel):
+    original_question: str
+    sub_questions: List[SubQuestion]
+    likely_requires_join: bool = False
+    wants_explanation: bool = False
+    needs_source_confirmation: bool = False
+    candidate_source_ids: List[str] = Field(default_factory=list)
+
+
+class SqlQueryPlan(BaseModel):
+    original_question: str
+    sub_queries: List[SqlSubQuery]
+    likely_requires_join: bool = False
+    wants_explanation: bool = False
+    needs_source_confirmation: bool = False
+    candidate_source_ids: List[str] = Field(default_factory=list)
 
 
 class ResultBlock(BaseModel):

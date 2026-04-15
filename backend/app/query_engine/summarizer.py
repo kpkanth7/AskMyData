@@ -14,6 +14,7 @@ async def summarize_results(parsed: ParsedQuery | Any, result_blocks: list[Resul
                 "Write exactly one grounded final answer to the user's original question. "
                 "Use only the provided rows and aggregates. Do not claim facts that are not present in the retrieved data. "
                 "Do not describe the retrieval process, SQL, row counts, result sections, or sample rows unless the row count is itself the answer. "
+                "Cover every result block that has rows, and explicitly mention when a sub-question has no matching rows. "
                 "If the result is an aggregate or ranking, name the winning or compared values and their metrics. "
                 "If the result is a record listing, briefly describe the listed records using the most meaningful fields. "
                 "If there are multiple sub-questions, synthesize them into one final answer."
@@ -54,14 +55,14 @@ def deterministic_summary(parsed: ParsedQuery | Any, result_blocks: list[ResultB
     if not result_blocks:
         return "No matching records were found for this question."
 
-    aggregate_summary = concise_aggregate_summary(result_blocks)
-    if aggregate_summary:
-        return aggregate_summary
-
     parts = []
     for block in result_blocks:
         if not block.rows:
             parts.append(f"{block.source_name}: no matching records were found.")
+            continue
+        aggregate_summary = concise_aggregate_summary([block])
+        if aggregate_summary:
+            parts.append(aggregate_summary)
             continue
         display_column = preferred_display_column(block.columns)
         if display_column:

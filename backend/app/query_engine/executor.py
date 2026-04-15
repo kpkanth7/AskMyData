@@ -5,7 +5,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from app.models.query import ChartSpec, ResultBlock, SqlSubQuery, SubQuestion
-from app.query_engine.chart_recommender import recommend_chart, recommend_chart_from_rows
+from app.query_engine.chart_recommender import recommend_chart, recommend_chart_from_rows, validated_planned_chart_from_rows
 from app.query_engine.intent_layer import detect_intent
 from app.query_engine.safe_sql_builder import build_select_sql, format_sql_preview, prepare_raw_select_sql
 from app.services.workspace import SourceRuntime
@@ -39,7 +39,9 @@ def execute_sub_question(sub_question: SubQuestion, runtime: SourceRuntime) -> R
     else:
         raise ValueError("Source is not executable.")
 
-    chart = recommend_chart(sub_question.question, sub_question.operation, columns, forced_chart_intent=sub_question.chart_intent)
+    chart = validated_planned_chart_from_rows(sub_question.question, columns, rows, sub_question.chart, forced_chart_intent=sub_question.chart_intent)
+    if not chart.enabled:
+        chart = recommend_chart(sub_question.question, sub_question.operation, columns, forced_chart_intent=sub_question.chart_intent)
     if not chart.enabled:
         chart = fallback_chart_from_rows(sub_question.question, columns, rows, sub_question.chart_intent)
     return ResultBlock(
@@ -73,7 +75,9 @@ def execute_sql_sub_query(sub_query: SqlSubQuery, runtime: SourceRuntime, allow_
     else:
         raise ValueError("Source is not executable.")
 
-    chart = recommend_chart_from_rows(sub_query.question, columns, rows, forced_chart_intent=sub_query.chart_intent)
+    chart = validated_planned_chart_from_rows(sub_query.question, columns, rows, sub_query.chart, forced_chart_intent=sub_query.chart_intent)
+    if not chart.enabled:
+        chart = recommend_chart_from_rows(sub_query.question, columns, rows, forced_chart_intent=sub_query.chart_intent)
     if not chart.enabled:
         chart = fallback_chart_from_rows(sub_query.question, columns, rows, sub_query.chart_intent)
     return ResultBlock(

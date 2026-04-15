@@ -1,6 +1,6 @@
-from app.models.query import AggregateFunction, OperationSpec, SortDirection
+from app.models.query import AggregateFunction, ChartKind, ChartSpec, OperationSpec, SortDirection
 from app.models.query import SqlQueryPlan, SqlSubQuery
-from app.query_engine.chart_recommender import recommend_chart, recommend_chart_from_rows
+from app.query_engine.chart_recommender import recommend_chart, recommend_chart_from_rows, validated_planned_chart_from_rows
 from app.query_engine.raw_sql_planner import preserve_subquery_chart_requests
 
 
@@ -209,6 +209,8 @@ def test_raw_sql_plan_preserves_chart_language_per_subquery():
 
     assert plan.sub_queries[0].chart_intent is True
     assert "pie chart" in plan.sub_queries[0].question
+    assert plan.sub_queries[0].chart.enabled is True
+    assert plan.sub_queries[0].chart.chart_type == ChartKind.pie
     assert plan.sub_queries[1].chart_intent is True
 
 
@@ -222,5 +224,36 @@ def test_raw_sql_comparison_rows_chart_without_metric_alias():
 
     assert chart.enabled is True
     assert chart.chart_type == "bar"
+    assert chart.x_key == "channel"
+    assert chart.y_key == "order_count"
+
+
+def test_validated_planned_chart_uses_llm_chart_axes_when_safe():
+    chart = validated_planned_chart_from_rows(
+        "show top 10 delays in a pie chart",
+        ["trip_id", "actual_delay_time"],
+        [{"trip_id": "T1", "actual_delay_time": 29}, {"trip_id": "T2", "actual_delay_time": 12}],
+        ChartSpec(enabled=True, chart_type=ChartKind.pie, x_key="trip_id", y_key="actual_delay_time", title="Delay share"),
+        forced_chart_intent=True,
+    )
+
+    assert chart.enabled is True
+    assert chart.chart_type == ChartKind.pie
+    assert chart.x_key == "trip_id"
+    assert chart.y_key == "actual_delay_time"
+    assert chart.title == "Delay share"
+
+
+def test_invalid_planned_chart_falls_back_to_safe_axes():
+    chart = validated_planned_chart_from_rows(
+        "compare online vs store orders by count",
+        ["channel", "order_count"],
+        [{"channel": "Online", "order_count": 17}, {"channel": "Store", "order_count": 9}],
+        ChartSpec(enabled=True, chart_type=ChartKind.bar, x_key="missing", y_key="also_missing"),
+        forced_chart_intent=True,
+    )
+
+    assert chart.enabled is True
+    assert chart.chart_type == ChartKind.bar
     assert chart.x_key == "channel"
     assert chart.y_key == "order_count"

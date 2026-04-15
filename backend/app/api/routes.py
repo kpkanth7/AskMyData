@@ -10,6 +10,7 @@ from app.query_engine.query_parser import deterministic_parse_query, parse_query
 from app.query_engine.raw_sql_planner import plan_raw_sql_query
 from app.query_engine.semantic_grounding import ground_operation_values
 from app.query_engine.summarizer import summarize_results
+from app.query_engine.visual_planner import enrich_charts_with_llm
 from app.providers.factory import ProviderRouter
 from app.services.sql_connection_manager import connect_sql_source
 from app.services.upload_manager import UploadLimitError, ingest_uploads
@@ -131,6 +132,7 @@ async def run_query(request: QueryRequest, settings: Settings = Depends(get_sett
                 result_blocks.append(execute_sql_sub_query(sub_query, runtime, allow_joins=request.allow_joins))
             if not result_blocks:
                 raise ValueError("The generated plan did not produce an executable source query.")
+            await enrich_charts_with_llm(request.question, result_blocks, provider)
             return QueryResponse(
                 result_blocks=result_blocks,
                 final_summary=await summarize_results(sql_plan, result_blocks, provider),
@@ -175,6 +177,7 @@ async def run_query(request: QueryRequest, settings: Settings = Depends(get_sett
             detail="I could not turn that request into a safe read-only query for the selected sources.",
         )
 
+    await enrich_charts_with_llm(request.question, result_blocks, provider)
     return QueryResponse(
         result_blocks=result_blocks,
         final_summary=await summarize_results(parsed, result_blocks, provider),

@@ -144,6 +144,49 @@ def recommend_chart_from_rows(question: str, columns: list[str], rows: list[dict
     return ChartSpec(enabled=True, chart_type=chart_type, x_key=x_key, y_key=y_key, title="Chart for this result")
 
 
+def validated_planned_chart_from_rows(
+    question: str,
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    planned_chart: ChartSpec | None,
+    forced_chart_intent: bool = False,
+) -> ChartSpec:
+    if not rows or not columns or planned_chart is None or not planned_chart.enabled:
+        return ChartSpec(enabled=False)
+
+    chart_type = planned_chart.chart_type
+    x_key = planned_chart.x_key if planned_chart.x_key in columns else None
+    y_key = planned_chart.y_key if planned_chart.y_key in columns else None
+
+    if not x_key or not y_key:
+        fallback = recommend_chart_from_rows(question, columns, rows, forced_chart_intent=True)
+        if fallback.enabled and chart_type and chart_type_is_compatible(chart_type, fallback.x_key, fallback.y_key, rows):
+            fallback.chart_type = chart_type
+        if planned_chart.title:
+            fallback.title = planned_chart.title
+        return fallback
+
+    if not column_has_numeric_values(y_key, rows):
+        return ChartSpec(enabled=False)
+    if chart_type in {ChartKind.scatter, ChartKind.histogram} and not column_has_numeric_values(x_key, rows):
+        return ChartSpec(enabled=False)
+
+    final_type = chart_type or choose_chart_kind(question, x_key, y_key, columns, rows)
+    if not chart_type_is_compatible(final_type, x_key, y_key, rows):
+        fallback = recommend_chart_from_rows(question, columns, rows, forced_chart_intent=forced_chart_intent or detect_intent(question).wants_chart)
+        if fallback.enabled:
+            return fallback
+        return ChartSpec(enabled=False)
+
+    return ChartSpec(
+        enabled=True,
+        chart_type=final_type,
+        x_key=x_key,
+        y_key=y_key,
+        title=planned_chart.title or "Chart for this result",
+    )
+
+
 def first_numeric_result_column(columns: list[str], rows: list[dict[str, Any]], exclude: set[str] | None = None) -> str | None:
     exclude = exclude or set()
     for column in columns:
@@ -153,6 +196,39 @@ def first_numeric_result_column(columns: list[str], rows: list[dict[str, Any]], 
         if values and all(is_numeric_value(value) for value in values):
             return column
     return None
+
+
+def column_has_numeric_values(column: str, rows: list[dict[str, Any]]) -> bool:
+    values = [row.get(column) for row in rows[:20] if row.get(column) is not None]
+    return bool(values) and all(is_numeric_value(value) for value in values)
+
+
+def chart_type_is_compatible(chart_type: ChartKind | None, x_key: str | None, y_key: str | None, rows: list[dict[str, Any]]) -> bool:
+    if not chart_type or not x_key or not y_key:
+        return False
+    if not column_has_numeric_values(y_key, rows):
+        return False
+    if chart_type == ChartKind.scatter:
+        return column_has_numeric_values(x_key, rows)
+    if chart_type == ChartKind.histogram:
+        return column_has_numeric_values(x_key, rows)
+    if chart_type == ChartKind.pie:
+        return can_use_pie(x_key, y_key, rows) and has_positive_measure(y_key, rows)
+    if chart_type in {ChartKind.treemap, ChartKind.radial_bar, ChartKind.radar}:
+        return can_use_part_to_whole(x_key, y_key, rows) and has_positive_measure(y_key, rows)
+    if chart_type in {ChartKind.line, ChartKind.area, ChartKind.bar, ChartKind.horizontal_bar}:
+        return True
+    return False
+
+
+def has_positive_measure(y_key: str, rows: list[dict[str, Any]]) -> bool:
+    return any((numeric_value(row.get(y_key)) or 0) > 0 for row in rows)
+
+
+def numeric_value(value: Any) -> float | None:
+    if not is_numeric_value(value):
+        return None
+    return float(value)
 
 
 def is_numeric_value(value: Any) -> bool:

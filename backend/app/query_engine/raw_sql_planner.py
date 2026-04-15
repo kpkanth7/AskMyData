@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, List
 
-from app.models.query import SqlQueryPlan
+from app.models.query import ChartKind, SqlQueryPlan
 from app.models.sources import SourceMetadata
 from app.providers.factory import ProviderRouter
 from app.query_engine.intent_layer import detect_intent
@@ -28,14 +28,23 @@ async def plan_raw_sql_query(question: str, sources: List[SourceMetadata], provi
                 "source_hint": "source name",
                 "requires_join": False,
                 "chart_intent": False,
+                "chart": {
+                    "enabled": False,
+                    "chart_type": "bar | horizontal_bar | line | area | pie | radial_bar | treemap | radar | scatter | histogram | null",
+                    "x_key": "column used for categories, time, or x values",
+                    "y_key": "numeric metric column",
+                    "title": "short chart title",
+                },
                 "sql": "SELECT ... FROM exact_table_name ... LIMIT 10",
             }
         ],
     }
     source_context = [source_context_for_prompt(source) for source in sources]
+    detected_sub_questions = split_query_parts(question)
     system_prompt = (
         "You are the SQL planning brain for askmydata. Return JSON only. "
         "For each independent part of the user question, choose the best source and write one read-only SQL SELECT query. "
+        "Create one sub_query per independent request in detected_sub_questions when more than one is provided. Do not merge independent requests into one SQL query. "
         "Use the exact table_name and exact column names from the source context. "
         "Use head_rows, sample_values, dtypes, semantic_type, and is_identifier to map user wording to fields and values. "
         "Handle spelling mistakes, case differences, natural phrasing, ranges, negation, counts, groupings, and rankings. "
@@ -45,12 +54,14 @@ async def plan_raw_sql_query(question: str, sources: List[SourceMetadata], provi
         "For 'with the most', 'top by count', or similar intent, use GROUP BY, COUNT(*) AS metric, ORDER BY metric DESC. "
         "For top/bottom row rankings and chart requests, include one human-readable label or identifier column in SELECT along with the numeric measure. "
         "For pie, treemap, radial, radar, bar, and comparison charts, SELECT both the slice/category/label column and the numeric metric. "
+        "Fill chart when a chart is explicit or useful. If the user names a chart type, use that chart_type. "
+        "Choose x_key and y_key from columns that will appear in that sub-query's SELECT output. "
         "For 'not X', 'excluding X', or 'without X', add a not-equal filter. "
         "For year/date ranges such as 2017-2021, use >= and <= filters. "
         "Always include a sensible LIMIT, respecting the user's requested number when provided; otherwise use 10 or 1 for a single winner aggregate. "
         "Set chart_intent true when a chart would help: comparisons, ranked aggregates, distributions, trends, changes over time, or explicit chart requests."
     )
-    user_prompt = f"Sources: {source_context}\nQuestion: {question}"
+    user_prompt = f"Sources: {source_context}\nDetected independent requests: {detected_sub_questions}\nQuestion: {question}"
     try:
         payload = await provider.structured_json(system_prompt, user_prompt, schema_hint)
         plan = SqlQueryPlan.model_validate(payload)
@@ -124,12 +135,22 @@ def preserve_subquery_chart_requests(plan: SqlQueryPlan) -> None:
         if not part or not has_visual_intent(part):
             continue
         sub_query.chart_intent = True
+        chart_type = explicit_chart_kind(part)
+        if chart_type and not sub_query.chart.chart_type:
+            sub_query.chart.enabled = True
+            sub_query.chart.chart_type = chart_type
         if has_chart_language(part) and not has_specific_chart_language(sub_query.question):
             sub_query.question = f"{sub_query.question} Visualization request: {part}"
 
 
 def split_query_parts(question: str) -> list[str]:
-    return [piece.strip(" .?") for piece in re.split(r"\b(?:and also|also|;)\b", question, flags=re.I) if piece.strip()]
+    split_pattern = (
+        r"\b(?:and\s+also|also|then)\b"
+        r"|;"
+        r"|[,?]\s*(?=(?:show|compare|plot|visualize|list|count|give|get|display|fetch|what|which|who|how\s+many)\b)"
+        r"|\s+and\s+(?=(?:show|compare|plot|visualize|list|count|give|get|display|fetch)\b)"
+    )
+    return [piece.strip(" .?") for piece in re.split(split_pattern, question, flags=re.I) if piece.strip()]
 
 
 def has_chart_language(text: str) -> bool:
@@ -145,3 +166,28 @@ def has_visual_intent(text: str) -> bool:
 def has_specific_chart_language(text: str) -> bool:
     lower = text.lower()
     return any(term in lower for term in ("pie", "donut", "treemap", "radial", "radar", "scatter", "histogram", "line", "area", "bar"))
+
+
+def explicit_chart_kind(text: str) -> ChartKind | None:
+    lower = text.lower()
+    if any(term in lower for term in ("pie", "donut", "doughnut")):
+        return ChartKind.pie
+    if "treemap" in lower or "tree map" in lower:
+        return ChartKind.treemap
+    if "radial" in lower:
+        return ChartKind.radial_bar
+    if "radar" in lower or "spider chart" in lower or "spider graph" in lower:
+        return ChartKind.radar
+    if "scatter" in lower:
+        return ChartKind.scatter
+    if "histogram" in lower:
+        return ChartKind.histogram
+    if "area" in lower:
+        return ChartKind.area
+    if "line" in lower:
+        return ChartKind.line
+    if "horizontal bar" in lower:
+        return ChartKind.horizontal_bar
+    if "bar" in lower:
+        return ChartKind.bar
+    return None

@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.models.query import AggregateFunction, FilterSpec, OperationSpec
 from app.models.sources import ColumnProfile, SourceKind, SourceMetadata, SourceType
 from app.query_engine.query_parser import deterministic_parse_query, reconcile_operation
+from app.query_engine.raw_sql_planner import split_query_parts
 
 
 def make_source(source_id: str, name: str, columns: list[ColumnProfile], row_count: int | None = None) -> SourceMetadata:
@@ -342,6 +343,41 @@ def test_multi_part_question_routes_each_part_to_its_source():
     assert [sub_question.source_id for sub_question in parsed.sub_questions] == ["transport", "movies"]
     assert parsed.sub_questions[0].chart_intent is True
     assert parsed.sub_questions[1].operation.group_by == ["type"]
+
+
+def test_multi_part_question_splits_and_compare_without_also():
+    transport = make_source(
+        "transport",
+        "public_transport_delays.csv",
+        [
+            ColumnProfile(name="trip_id", dtype="object", sample_values=["T00073"], semantic_type="identifier", is_identifier=True),
+            ColumnProfile(name="transport_type", dtype="object", sample_values=["Train"], semantic_type="categorical"),
+            ColumnProfile(name="actual_arrival_delay", dtype="int64", sample_values=[29], semantic_type="numeric"),
+        ],
+    )
+    media = make_source(
+        "movies",
+        "media.csv",
+        [
+            ColumnProfile(name="type", dtype="object", sample_values=["Movie", "TV Show"], semantic_type="categorical"),
+            ColumnProfile(name="title", dtype="object", sample_values=["Example"], semantic_type="text"),
+            ColumnProfile(name="release_year", dtype="int64", sample_values=[2015], semantic_type="numeric"),
+        ],
+    )
+
+    question = "show top 10 train trips by actual arrival delay in a pie chart and compare movies vs tv shows by count for year 2015"
+    parsed = deterministic_parse_query(question, [transport, media])
+
+    assert [sub_question.source_id for sub_question in parsed.sub_questions] == ["transport", "movies"]
+    assert parsed.sub_questions[0].chart_intent is True
+    assert parsed.sub_questions[1].operation.group_by == ["type"]
+    assert any(filter_spec.column == "release_year" and filter_spec.value == 2015 for filter_spec in parsed.sub_questions[1].operation.filters)
+
+
+def test_raw_sql_splitter_keeps_comparison_phrase_together():
+    parts = split_query_parts("show top 10 customers by revenue, compare movies and tv shows by count")
+
+    assert parts == ["show top 10 customers by revenue", "compare movies and tv shows by count"]
 
 
 def test_aggregate_ranking_supports_negated_categorical_value():

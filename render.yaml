@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: askmydata-backend
+    runtime: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_MODE
+        value: safe
+      - key: BACKEND_HOST
+        value: 0.0.0.0
+      - key: BACKEND_PORT
+        value: 8000
+      - key: MAX_TOTAL_FILES
+        value: 5
+      - key: MAX_FILE_SIZE_MB
+        value: 10
+      - key: DEFAULT_LLM_PROVIDER
+        value: cerebras
+      - key: DEFAULT_LLM_MODEL
+        value: qwen-3-235b-a22b-instruct-2507
+      - key: CEREBRAS_MODEL
+        value: qwen-3-235b-a22b-instruct-2507
+      - key: CEREBRAS_BASE_URL
+        value: https://api.cerebras.ai/v1
+      - key: ENABLE_LLM_FALLBACK
+        value: false
+      - key: ENABLE_SQL_PREVIEW
+        value: true
+      - key: ENABLE_CHARTS
+        value: true
+      - key: ENABLE_LIGHT_CLEANING_PROMPT
+        value: true
+      - key: ENABLE_MULTI_SOURCE_ROUTING
+        value: true
+      - key: ENABLE_JOIN_CONFIRMATION
+        value: true
+      - key: ENABLE_DEV_MODE_TOOLS
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: web
+    name: askmydata-frontend
+    runtime: node
+    rootDir: frontend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -- -p $PORT
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false

@@ -49,6 +49,13 @@ async def try_llm_parse(question: str, sources: List[SourceMetadata], provider: 
                 "source_hint": "source name",
                 "requires_join": False,
                 "chart_intent": False,
+                "chart": {
+                    "enabled": False,
+                    "chart_type": "bar | horizontal_bar | line | area | pie | radial_bar | treemap | radar | scatter | histogram | null",
+                    "x_key": "selected/grouped/category/time/x column",
+                    "y_key": "numeric metric column",
+                    "title": "short chart title",
+                },
                 "operation": {
                     "select_columns": [],
                     "filters": [],
@@ -85,7 +92,8 @@ async def try_llm_parse(question: str, sources: List[SourceMetadata], provider: 
         "If a query appears to require combining datasets, set likely_requires_join true. "
         "Represent user values as filters in JSON. For ranges, use gte and lte filters. "
         "For negated values such as 'not Unknown' or 'excluding cancelled', use operator neq. "
-        "For questions like 'X with the most Y', group by X, aggregate count, sort descending, and limit to the requested count."
+        "For questions like 'X with the most Y', group by X, aggregate count, sort descending, and limit to the requested count. "
+        "Fill chart when a chart is explicit or useful. If the user asks for a specific chart type, use that chart_type and pick axes from selected/grouped output columns."
     )
     user_prompt = f"Sources: {source_context}\nQuestion: {question}"
     try:
@@ -257,7 +265,13 @@ def sanitize_operation(operation: OperationSpec, source: SourceMetadata) -> Oper
 
 
 def split_into_parts(question: str) -> List[str]:
-    pieces = [piece.strip(" ?") for piece in re.split(r"\b(?:and also|also|;)\b", question, flags=re.I) if piece.strip()]
+    split_pattern = (
+        r"\b(?:and\s+also|also|then)\b"
+        r"|;"
+        r"|[,?]\s*(?=(?:show|compare|plot|visualize|list|count|give|get|display|fetch|what|which|who|how\s+many)\b)"
+        r"|\s+and\s+(?=(?:show|compare|plot|visualize|list|count|give|get|display|fetch)\b)"
+    )
+    pieces = [piece.strip(" ?") for piece in re.split(split_pattern, question, flags=re.I) if piece.strip()]
     return pieces or [question]
 
 
