@@ -4,8 +4,8 @@ AskMyData is a full-stack app where a user can upload data sources, ask normal E
 
 Live links:
 
-- Frontend: _deployment pending_
-- Backend health: _deployment pending_
+- Frontend: https://frontend-alpha-vert-6xsr9y8hfi.vercel.app
+- Backend health: https://askmydata-backend-live.onrender.com/health
 
 ## What It Does
 
